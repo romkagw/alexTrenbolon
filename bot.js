@@ -124,16 +124,25 @@ bot.on('poll_answer', (answer) => {
 
     if (selectedOption === 0) { // 0 = "Да"
         userStreaks[userId].count += 1;
-    } else {
-        userStreaks[userId].count = 0; // сброс, если ответ не "Да"
+    } else { // Если выбрал "Нет" или "Может быть"
+        userStreaks[userId].count = 0; // сброс счётчика
     }
+
     console.log(`${username} — ${userStreaks[userId].count} подряд`);
 
-    // Проверяем достижение 10 подряд
+    // Проверяем достижение 3 подряд (или 10)
     if (userStreaks[userId].count === 3) {
         bot.sendMessage(
             CHAT_ID,
             `🎉 @${username} красавчик! 3 тренировки подряд! 💪`
+        );
+    }
+
+    // --- Новый функционал: сообщение при "Нет" ---
+    if (selectedOption === 1) { // 1 = "Нет"
+        bot.sendMessage(
+            CHAT_ID,
+            `😢 @${username}, пидора ответ! 💪`
         );
     }
 });
