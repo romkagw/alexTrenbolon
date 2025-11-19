@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const TelegramBot = require('node-telegram-bot-api');
 const cron = require('node-cron');
 
@@ -16,7 +18,6 @@ const CHAT_ID = process.env.CHAT_ID; // Рекомендую добавить в
 
 if (!CHAT_ID) {
     console.error("Ошибка: CHAT_ID не указан!");
-    process.exit(1);
 }
 
 // Команды бота
