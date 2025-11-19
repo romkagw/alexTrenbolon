@@ -139,11 +139,28 @@ bot.on('poll_answer', (answer) => {
     }
 
     // --- Новый функционал: сообщение при "Нет" ---
-    if (selectedOption === 1) { // 1 = "Нет"
-        bot.sendMessage(
-            CHAT_ID,
-            `😢 @${username}, пидора ответ! 💪`
-        );
+    const insults = [
+        "😢 @${displayName}, пидора ответ! 💪",
+        "😏 @${displayName}, лень твою знают все! 🔥",
+        "😂 @${displayName}, диван победил сегодня! 🛋️",
+        "⚡ @${displayName}, мышцы плачут без тебя! 💀",
+        "🤣 @${displayName}, опять отмазался? 💪",
+        "🔥 @${displayName}, слабак дня! 😎",
+        "💀 @${displayName}, тренировка пропала впустую! 😱",
+        "😅 @${displayName}, ты сегодня на отдыхе… снова! 💤",
+        "😂 @${displayName}, коту весело без тебя! 🐱",
+        "😜 @${displayName}, жаль твои бицепсы без работы! 💪"
+    ];
+
+// В обработчике poll_answer:
+    if (selectedOption === 1) { // "Нет"
+        const insult = insults[Math.floor(Math.random() * insults.length)];
+        const displayName = answer.user.username ? `@${answer.user.username}` : answer.user.first_name;
+
+        // заменяем ${displayName} на реальное имя
+        const message = insult.replace("${displayName}", displayName);
+
+        bot.sendMessage(CHAT_ID, message);
     }
 });
 
