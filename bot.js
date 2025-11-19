@@ -29,13 +29,26 @@ bot.onText(/\/help/, (msg) => {
     bot.sendMessage(msg.chat.id, 'Я буду спрашивать вас про зал каждый понедельник, среду и пятницу в 14:00');
 });
 
-bot.on('message', (msg) => {
-    console.log('CHAT ID:', msg.chat.id);
+bot.onText(/\/test/, (msg) => {
+    bot.sendPoll(
+        msg.chat.id,
+        "Идёте ли вы сегодня в зал? 💪", // вопрос
+        ["Да", "Нет", "Может быть"],     // варианты
+        {
+            is_anonymous: false          // сделать опрос НЕ анонимным (можно включить)
+        }
+    );
 });
+
 // --- Планировщик ---
 // Каждую неделю, понедельник, среда, пятница в 14:00
 cron.schedule('0 14 * * 1,3,5', () => {
-    bot.sendMessage(CHAT_ID, 'Идёте ли вы сегодня в зал? 💪');
+    bot.sendPoll(
+        CHAT_ID,
+        "Идёте ли вы сегодня в зал? 💪",
+        ["Да", "Нет", "Может быть"],
+        { is_anonymous: false }
+    );
 });
 
 console.log('Бот запущен...');
