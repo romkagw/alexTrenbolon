@@ -127,6 +127,7 @@ bot.on('poll_answer', (answer) => {
     } else {
         userStreaks[userId].count = 0; // сброс, если ответ не "Да"
     }
+    console.log(`${username} — ${userStreaks[userId].count} подряд`);
 
     // Проверяем достижение 10 подряд
     if (userStreaks[userId].count === 3) {
