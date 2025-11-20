@@ -9,7 +9,7 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 require('./commands/start')(bot);
 require('./commands/help')(bot);
 require('./commands/test')(bot);
-require('./commands/motivate')(bot);
+require('./commands/motivate')(bot, quotes);
 
 // Опросы и цитаты
 require('./polls/pollScheduler')(bot, quotes);
