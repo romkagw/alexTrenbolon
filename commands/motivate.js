@@ -8,7 +8,7 @@ module.exports = (bot, quotes) => {
         bot.sendMessage(msg.chat.id, randomQuote);
     });
 
-    nodeCron.schedule('0 * * * *', () => {
+    nodeCron.schedule('0 13 * * 1,3,5', () => {
         const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
         bot.sendMessage(CHAT_ID, randomQuote);
     });
