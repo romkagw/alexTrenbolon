@@ -1,5 +1,5 @@
 module.exports = (bot, CHAT_ID) => {
-    const pollCron = '0 14 * * 1,3,5';
+    const pollCron = '0 15 * * 1,3,5';
     require('node-cron').schedule(pollCron, () => {
         bot.sendPoll(
             CHAT_ID,

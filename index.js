@@ -1,5 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
 const { TOKEN } = require('./config');
+const { CHAT_ID } = require('./config');
 const quotes = require('./quotes');
 const userStreaks = {};
 
@@ -12,7 +13,7 @@ require('./commands/test')(bot);
 require('./commands/motivate')(bot, quotes);
 
 // Опросы и цитаты
-require('./polls/pollScheduler')(bot, quotes);
+require('./polls/pollScheduler')(bot, CHAT_ID);
 require('./polls/pollHandler')(bot, userStreaks);
 
 console.log('Бот запущен...');
