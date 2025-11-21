@@ -17,3 +17,4 @@ require('./polls/pollScheduler')(bot, CHAT_ID);
 require('./polls/pollHandler')(bot, userStreaks);
 
 console.log('Бот запущен...');
+console.log(new Date());

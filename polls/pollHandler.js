@@ -1,6 +1,6 @@
 const insults = require('../insults');
 
-module.exports = (bot, userStreaks) => {
+module.exports = (bot, userStreaks, CHAT_ID ) => {
     bot.on('poll_answer', (answer) => {
         const userId = answer.user.id;
         const displayName = answer.user.username ? `@${answer.user.username}` : answer.user.first_name;
@@ -21,7 +21,7 @@ module.exports = (bot, userStreaks) => {
 
         if (userStreaks[userId].count === 3) {
             bot.sendMessage(
-                process.env.CHAT_ID,
+                CHAT_ID,
                 `🎉 ${displayName} красавчик! 3 тренировки подряд! 💪`
             );
         }
