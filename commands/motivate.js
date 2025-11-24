@@ -5,9 +5,33 @@ module.exports = (bot, quotes) => {
 
     bot.onText(/\/motivate/, (msg) => {
         const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
-        bot.sendMessage(msg.chat.id, randomQuote);
+
+        bot.sendMessage(msg.chat.id, randomQuote, {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "🔥 Ещё мотивацию", callback_data: "more_motivation" }]
+                ]
+            }
+        });
     });
 
+    bot.on("callback_query", (query) => {
+        if (query.data === "more_motivation") {
+            const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
+
+            bot.sendMessage(query.message.chat.id, randomQuote, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "🔥 Ещё мотивацию", callback_data: "more_motivation" }]
+                    ]
+                }
+            });
+
+            bot.answerCallbackQuery(query.id);
+        }
+    });
+
+    // Cron-задача
     nodeCron.schedule('0 13 * * 1,3,5', () => {
         const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
         bot.sendMessage(CHAT_ID, randomQuote);
