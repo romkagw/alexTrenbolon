@@ -1,7 +1,7 @@
 module.exports = (bot, CHAT_ID) => {
     const cron = require('node-cron');
 
-    cron.schedule('0 15 * * 1,3,5', () => {
+    cron.schedule('0 14 * * 1,3,5', () => {
         bot.sendPoll(
             CHAT_ID,
             "Идёте ли вы сегодня в зал? 💪",

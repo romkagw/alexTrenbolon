@@ -73,12 +73,14 @@ module.exports = (bot) => {
     });
 
     // ⏰ Автоматическая мотивация по расписанию (Пн, Ср, Пт 13:00)
-    nodeCron.schedule('0 13 * * 1,3,5', async () => {
+    nodeCron.schedule('0 14 * * 1,3,5', async () => {
         try {
             const motivation = await getMotivation();
             await safeSendMessage(CHAT_ID, motivation);
         } catch (e) {
             console.error("Cron GPT error", e);
         }
+    }, {
+        timezone: "Europe/Kiev"
     });
 };
