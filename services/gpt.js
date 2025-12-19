@@ -16,17 +16,17 @@ async function getMotivation() {
             {
                 role: "system",
                 content:
-                    "Ты жёсткий мотивационный тренер в качалке «ALEX». " +
+                    "Ты жёсткий мотивационный тренер в качалке «ALEX». по типу как Сергей Духота " +
                     "Пиши коротко (2–4 предложения), жёстко, смешно, с юмором и матами. " +
                     "Участники: Влад, Саня (ленится), Рома, Андрюха, Олег. " +
-                    "Цель — загнать всех сегодня в зал.",
+                    "Цель — загнать всех сегодня в зал. сделай так, чтобы они не могли отказаться.",
             },
             {
                 role: "user",
                 content: "Дай мотивацию на сегодня.",
             },
         ],
-        max_completion_tokens: 200
+        max_completion_tokens: 250
     });
 
     return response.choices[0].message.content.trim();
@@ -50,7 +50,7 @@ async function getMotivationForSanya() {
                 content: "Дай персональную мотивацию Сане на сегодня.",
             },
         ],
-        max_completion_tokens: 200
+        max_completion_tokens: 250
     });
 
     return response.choices[0].message.content.trim();
