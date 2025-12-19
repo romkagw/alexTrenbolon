@@ -11,7 +11,7 @@ const openai = new OpenAI({
 
 async function getMotivation() {
     const response = await openai.chat.completions.create({
-        model: "gpt-5-nano", // 💰 максимально дёшево
+        model: "gpt-3.5-turbo", // 💰 максимально дёшево
         messages: [
             {
                 role: "system",
@@ -26,8 +26,7 @@ async function getMotivation() {
                 content: "Дай мотивацию на сегодня.",
             },
         ],
-        max_tokens: 150,
-        temperature: 0.9,
+        max_completion_tokens: 200
     });
 
     return response.choices[0].message.content.trim();
@@ -35,7 +34,7 @@ async function getMotivation() {
 
 async function getMotivationForSanya() {
     const response = await openai.chat.completions.create({
-        model: "gpt-5-nano",
+        model: "gpt-3.5-turbo",
         messages: [
             {
                 role: "system",
@@ -51,8 +50,7 @@ async function getMotivationForSanya() {
                 content: "Дай персональную мотивацию Сане на сегодня.",
             },
         ],
-        max_tokens: 120,
-        temperature: 1.0,
+        max_completion_tokens: 200
     });
 
     return response.choices[0].message.content.trim();
