@@ -11,7 +11,7 @@ const openai = new OpenAI({
 
 async function getMotivation() {
     const response = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo", // 💰 максимально дёшево
+        model: "gpt-4o-mini",
         messages: [
             {
                 role: "system",
@@ -26,7 +26,7 @@ async function getMotivation() {
                 content: "Дай мотивацию на сегодня.",
             },
         ],
-        max_completion_tokens: 250
+        max_completion_tokens: 300
     });
 
     return response.choices[0].message.content.trim();
