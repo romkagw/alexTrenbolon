@@ -1,19 +1,13 @@
+// Локальный запуск через polling (npm start).
+// Перед этим удалите webhook: https://api.telegram.org/bot<TOKEN>/deleteWebhook
+// На Vercel этот файл не используется — там работает api/webhook.js
 require('dotenv').config();
-const TelegramBot = require('node-telegram-bot-api');
-const { TOKEN, CHAT_ID } = require('./config');
-const userStreaks = {};
+const { getBot } = require('./lib/bot');
+const { handleUpdate } = require('./lib/handleUpdate');
 
-const bot = new TelegramBot(TOKEN, { polling: true });
+const bot = getBot({ polling: true });
 
-// Команды
-require('./commands/start')(bot);
-require('./commands/help')(bot);
-require('./commands/test')(bot);
-require('./commands/motivate')(bot);
+bot.on('message', (message) => handleUpdate(bot, { message }).catch(console.error));
 
-// Опросы и цитаты
-require('./polls/pollScheduler')(bot, CHAT_ID);
-require('./polls/pollHandler')(bot, userStreaks);
-
-console.log('Бот запущен...');
+console.log('Дневник запущен...');
 console.log(new Date());
