@@ -2,6 +2,7 @@
 // и сам решает, какие действия с дневником выполнить
 const openai = require('./openai');
 const diary = require('./diary');
+const chart = require('./chart');
 const { redis } = require('./storage');
 const { OPENAI_MODEL, TIMEZONE } = require('../config');
 
@@ -56,6 +57,11 @@ const tools = [
         parameters: { type: 'object', properties: { date: dateParam } },
     },
     {
+        name: 'get_workout_summary',
+        description: 'Готовый итог тренировки за день: по каждому упражнению подходы, тоннаж, прошлая тренировка, побитые рекорды',
+        parameters: { type: 'object', properties: { date: dateParam } },
+    },
+    {
         name: 'get_stats',
         description: 'Статистика за период: число тренировок, по каждому упражнению подходы, повторения, тоннаж, макс. вес',
         parameters: {
@@ -66,6 +72,37 @@ const tools = [
             },
             required: ['from'],
         },
+    },
+    {
+        name: 'get_records',
+        description: 'Личные рекорды по всем упражнениям',
+        parameters: { type: 'object', properties: {} },
+    },
+    {
+        name: 'show_chart',
+        description: 'Отправить пользователю картинку-график прогресса по упражнению или веса тела',
+        parameters: {
+            type: 'object',
+            properties: {
+                exercise: { type: 'string', description: 'Упражнение. Не указывать, если нужен график веса тела' },
+                body_weight: { type: 'boolean', description: 'true — график веса тела' },
+                sessions: { type: 'number', description: 'Сколько последних тренировок (по умолчанию 20) или дней для веса (по умолчанию 90)' },
+            },
+        },
+    },
+    {
+        name: 'log_body_weight',
+        description: 'Записать вес тела',
+        parameters: {
+            type: 'object',
+            properties: { weight: { type: 'number', description: 'Вес в кг' }, date: dateParam },
+            required: ['weight'],
+        },
+    },
+    {
+        name: 'get_body_weight',
+        description: 'История веса тела',
+        parameters: { type: 'object', properties: { days: { type: 'number', description: 'За сколько дней, по умолчанию 90' } } },
     },
     {
         name: 'undo_last',
@@ -96,10 +133,23 @@ const handlers = {
     log_sets: diary.logSets,
     get_exercise_history: diary.getExerciseHistory,
     get_workout: diary.getWorkout,
+    get_workout_summary: diary.getWorkoutSummary,
     get_stats: diary.getStats,
     undo_last: diary.undoLast,
     delete_sets: diary.deleteSets,
     rename_exercise: diary.renameExercise,
+    get_records: diary.getAllRecords,
+    log_body_weight: diary.logBodyWeight,
+    get_body_weight: diary.getBodyWeight,
+    // Модели отдаём и точки графика, чтобы выводы были по реальным цифрам
+    show_chart: async ({ exercise, body_weight, sessions }, ctx) => {
+        if (body_weight || !exercise) {
+            ctx.photos.push(await chart.bodyWeightChart(sessions || 90));
+            return { sent: true, points: await diary.getBodyWeightHistory(sessions || 90) };
+        }
+        ctx.photos.push(await chart.exerciseChart(exercise, sessions || 20));
+        return { sent: true, points: await diary.getExerciseProgress(exercise, sessions || 20) };
+    },
 };
 
 async function systemPrompt() {
@@ -117,6 +167,11 @@ async function systemPrompt() {
         '- Разбирай форматы: «80х8», «80 на 8», «3 по 10 по 60» (3 подхода × 10 повторов × 60 кг), «12 10 8» (три подхода с разным числом повторов), «+20кг» к собственному весу — это weight 20.',
         '- Если не хватает важного (непонятно, повторы это или вес) — переспроси коротко, ничего не записывая.',
         '- После записи коротко подтверди, что записано, и сравни с previous_session: прогресс, такой же результат или меньше. Если прошлых данных нет — скажи, что это первая запись.',
+        '- Если в результате log_sets есть new_records — обязательно поздравь с новым личным рекордом 🏆 и назови, какой именно.',
+        '- «Вес 82.5», «вешу 80» без упражнения — это вес тела: log_body_weight, сравни с прошлым замером.',
+        '- Просят график/динамику — вызови show_chart (картинка уйдёт сама), в тексте дай 1–2 вывода по цифрам.',
+        '- Итог тренировки: вызови get_workout_summary и перескажи его: что сделано, сравнение с прошлым разом (тоннаж и подходы из previous_session), рекорды только из new_records, общий тоннаж. Ничего не пересчитывай сам.',
+        '- Рекорд — только то, что пришло в new_records. Сам рекорды не объявляй.',
         '- Если спрашивают «что делал в прошлый раз», «сколько ставить» — возьми историю и предложи рабочий вес/повторы на сегодня (небольшая прогрессия, если прошлый раз все повторы выполнены). Веса округляй до шага 2,5 кг (гантели — 1–2 кг). Сравнивай с прошлым тренировочным днём, а не с подходами этого же дня.',
         '- Даты вроде «вчера», «в понедельник», «за неделю», «за месяц» переводи в YYYY-MM-DD относительно сегодняшней даты.',
         '- Ничего не выдумывай: цифры бери только из результатов инструментов.',
@@ -136,18 +191,22 @@ async function saveHistory(userText, answer) {
     await tx.exec();
 }
 
-async function runTool(call) {
+async function runTool(call, ctx) {
     const handler = handlers[call.function.name];
     if (!handler) return { error: `Неизвестный инструмент ${call.function.name}` };
     try {
-        return await handler(JSON.parse(call.function.arguments || '{}'));
+        const result = await handler(JSON.parse(call.function.arguments || '{}'), ctx);
+        if (call.function.name === 'log_sets') ctx.logged = true;
+        return result;
     } catch (e) {
         console.error(`Tool ${call.function.name} error`, e);
         return { error: e.message };
     }
 }
 
+// Возвращает текст ответа, картинки (графики) и флаг, что были записаны подходы
 async function reply(userText) {
+    const ctx = { photos: [], logged: false };
     const messages = [
         { role: 'system', content: await systemPrompt() },
         ...(await loadHistory()),
@@ -167,16 +226,16 @@ async function reply(userText) {
         if (!message.tool_calls?.length) {
             const answer = message.content?.trim() || '🤔 Не понял, переформулируй';
             await saveHistory(userText, answer);
-            return answer;
+            return { text: answer, ...ctx };
         }
 
         for (const call of message.tool_calls) {
-            const result = await runTool(call);
+            const result = await runTool(call, ctx);
             messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
         }
     }
 
-    return 'Что-то я запутался 🙃 Проверь последнюю тренировку и переформулируй.';
+    return { text: 'Что-то я запутался 🙃 Проверь последнюю тренировку и переформулируй.', ...ctx };
 }
 
 module.exports = { reply };

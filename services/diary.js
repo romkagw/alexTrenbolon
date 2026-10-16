@@ -4,6 +4,8 @@
 //   exdays:<exercise>  — zset дней, когда делалось упражнение
 //   exercises          — set канонических названий упражнений
 //   last_batch         — последняя запись, для отмены
+//   last_exercise      — последнее записанное упражнение, для кнопок под записью
+//   bodyweight         — hash день → вес тела
 const { redis } = require('./storage');
 const { TIMEZONE } = require('../config');
 
@@ -82,6 +84,44 @@ async function rewriteDay(day, entries, affectedExercises) {
     await tx.exec();
 }
 
+// Все подходы упражнения за всю историю, с датой
+async function exerciseSets(exercise) {
+    const days = await redis.zrange(exDaysKey(exercise), 0, -1);
+    const lists = await getDays(days);
+    return lists.flatMap((entries, i) =>
+        entries.filter((e) => e.exercise === exercise).map((e) => ({ day: days[i], ...view(e) }))
+    );
+}
+
+function estimate1RM(set) {
+    if (!set.weight || !set.reps) return 0;
+    return set.reps === 1 ? set.weight : set.weight * (1 + set.reps / 30);
+}
+
+// Лучший подход по метрике (при равенстве — самый ранний)
+function bestSet(sets, score) {
+    const top = sets.reduce((best, set) => (score(set) > score(best || {}) ? set : best), null);
+    return top && score(top) ? top : null;
+}
+
+const RECORD_METRICS = {
+    max_weight: (s) => s.weight || 0,
+    max_reps_bodyweight: (s) => (s.weight ? 0 : s.reps || 0),
+    estimated_1rm: estimate1RM,
+};
+
+// Какие рекорды побиты новыми подходами (первая запись рекордом не считается)
+function findNewRecords(history, newSets) {
+    if (!history.length) return [];
+    return Object.entries(RECORD_METRICS)
+        .filter(([, score]) => {
+            const before = Math.max(0, ...history.map(score));
+            const now = Math.max(0, ...newSets.map(score));
+            return now > before;
+        })
+        .map(([name]) => name);
+}
+
 async function logSets({ exercise, sets, date }) {
     const day = assertDay(date || today());
     const name = String(exercise || '').trim();
@@ -98,6 +138,7 @@ async function logSets({ exercise, sets, date }) {
     if (!entries.length) throw new Error('Нет подходов для записи');
 
     const [previous] = await getSessions(name, { before: day, limit: 1 });
+    const history = await exerciseSets(name);
 
     const tx = redis.multi();
     tx.sadd('exercises', name);
@@ -105,44 +146,110 @@ async function logSets({ exercise, sets, date }) {
     tx.zadd('days', { score: dayScore(day), member: day });
     tx.zadd(exDaysKey(name), { score: dayScore(day), member: day });
     tx.set('last_batch', { day, ids: entries.map((e) => e.id) });
+    tx.set('last_exercise', name);
     await tx.exec();
 
     const todaySets = (await getDay(day)).filter((e) => e.exercise === name).map(view);
-    return { day, exercise: name, logged: entries.length, sets_this_day: todaySets, previous_session: previous || null };
+    return {
+        day,
+        exercise: name,
+        logged: entries.length,
+        sets_this_day: todaySets,
+        previous_session: previous || null,
+        new_records: findNewRecords(history, entries),
+    };
 }
 
-function estimate1RM(set) {
-    if (!set.weight || !set.reps) return 0;
-    return set.reps === 1 ? set.weight : set.weight * (1 + set.reps / 30);
+// Кнопка «Ещё подход»: повторяет последний подход последнего упражнения (после отмены — предыдущий)
+async function repeatLast() {
+    const exercise = await lastExercise();
+    const [session] = exercise ? await getSessions(exercise, { limit: 1 }) : [];
+    if (!session) throw new Error('Нечего повторять — сначала запиши подход');
+
+    const { note, ...set } = session.sets[session.sets.length - 1];
+    return logSets({ exercise, sets: [set] });
+}
+
+function lastExercise() {
+    return redis.get('last_exercise');
 }
 
 async function getExerciseHistory({ exercise, sessions = 5 }) {
     const limit = Math.min(30, Math.max(1, sessions));
     const recent = await getSessions(exercise, { limit });
-    const allDays = await redis.zrange(exDaysKey(exercise), 0, -1);
-    const lists = await getDays(allDays);
-    const allSets = lists.flatMap((entries, i) =>
-        entries.filter((e) => e.exercise === exercise).map((e) => ({ day: allDays[i], ...view(e) }))
-    );
-
-    // Лучший подход по заданной метрике (при равенстве — самый ранний)
-    const record = (score) => {
-        const top = allSets.reduce((best, set) => (score(set) > score(best || {}) ? set : best), null);
-        return top && score(top) ? top : null;
-    };
-    const best1RM = record(estimate1RM);
+    const allSets = await exerciseSets(exercise);
+    const days = [...new Set(allSets.map((s) => s.day))];
+    const best1RM = bestSet(allSets, estimate1RM);
 
     return {
         exercise,
-        total_sessions: allDays.length,
-        first_day: allDays[0] || null,
+        total_sessions: days.length,
+        first_day: days[0] || null,
         recent_sessions: recent,
         records: {
-            max_weight: record((s) => s.weight || 0),
-            max_reps: record((s) => s.reps || 0),
-            best_estimated_1rm: best1RM ? { ...best1RM, e1rm_kg: Math.round(estimate1RM(best1RM) * 10) / 10 } : null,
+            max_weight: bestSet(allSets, RECORD_METRICS.max_weight),
+            max_reps: bestSet(allSets, (s) => s.reps || 0),
+            best_estimated_1rm: best1RM ? { ...best1RM, e1rm_kg: round(estimate1RM(best1RM)) } : null,
         },
     };
+}
+
+async function getAllRecords() {
+    const exercises = await listExercises();
+    const records = {};
+    for (const exercise of exercises) {
+        const sets = await exerciseSets(exercise);
+        if (!sets.length) continue;
+        const best1RM = bestSet(sets, estimate1RM);
+        records[exercise] = {
+            max_weight: bestSet(sets, RECORD_METRICS.max_weight),
+            max_reps: bestSet(sets, (s) => s.reps || 0),
+            best_estimated_1rm_kg: best1RM ? round(estimate1RM(best1RM)) : null,
+            last_day: sets[sets.length - 1].day,
+        };
+    }
+    return { records };
+}
+
+// Точки для графика: по каждой тренировке лучший вес, расчётный 1ПМ и сумма повторов
+async function getExerciseProgress(exercise, sessions = 20) {
+    const list = await getSessions(exercise, { limit: Math.min(60, sessions) });
+    return list.reverse().map(({ day, sets }) => ({
+        day,
+        max_weight: Math.max(0, ...sets.map((s) => s.weight || 0)),
+        e1rm: round(Math.max(0, ...sets.map(estimate1RM))),
+        total_reps: sets.reduce((sum, s) => sum + (s.reps || 0), 0),
+    }));
+}
+
+const round = (n) => Math.round(n * 10) / 10;
+
+async function logBodyWeight({ weight, date }) {
+    const day = assertDay(date || today());
+    if (typeof weight !== 'number' || weight <= 0) throw new Error('Некорректный вес');
+
+    const history = await getBodyWeightHistory();
+    const previous = [...history].reverse().find((p) => p.day < day) || null;
+    await redis.hset('bodyweight', { [day]: weight });
+
+    return { day, weight, previous, change_kg: previous ? round(weight - previous.weight) : null };
+}
+
+async function getBodyWeightHistory(days = 365) {
+    const all = (await redis.hgetall('bodyweight')) || {};
+    const minScore = dayScore(today()) - days;
+    return Object.entries(all)
+        .map(([day, weight]) => ({ day, weight: Number(weight) }))
+        .filter((p) => dayScore(p.day) >= minScore)
+        .sort((a, b) => a.day.localeCompare(b.day));
+}
+
+async function getBodyWeight({ days = 90 } = {}) {
+    const history = await getBodyWeightHistory(days);
+    if (!history.length) return { history: [], message: 'Вес тела ещё не записывался' };
+    const first = history[0];
+    const last = history[history.length - 1];
+    return { history, change_kg: round(last.weight - first.weight), min: Math.min(...history.map((p) => p.weight)), max: Math.max(...history.map((p) => p.weight)) };
 }
 
 async function getWorkout({ date }) {
@@ -153,6 +260,29 @@ async function getWorkout({ date }) {
         (byExercise[e.exercise] ||= []).push(view(e));
     }
     return { day, exercises: byExercise };
+}
+
+const tonnage = (sets) => sets.reduce((sum, s) => sum + (s.weight || 0) * (s.reps || 0), 0);
+
+// Итог дня: по каждому упражнению — подходы, тоннаж, прошлая тренировка и побитые рекорды
+async function getWorkoutSummary({ date }) {
+    const day = assertDay(date || today());
+    const { exercises } = await getWorkout({ date: day });
+
+    const summary = {};
+    for (const [exercise, sets] of Object.entries(exercises)) {
+        const history = (await exerciseSets(exercise)).filter((s) => s.day < day);
+        const [previous] = await getSessions(exercise, { before: day, limit: 1 });
+        summary[exercise] = {
+            sets,
+            reps: sets.reduce((sum, s) => sum + (s.reps || 0), 0),
+            tonnage_kg: tonnage(sets),
+            previous_session: previous ? { ...previous, tonnage_kg: tonnage(previous.sets) } : null,
+            new_records: findNewRecords(history, sets),
+        };
+    }
+    const total = Object.values(summary).reduce((sum, e) => sum + e.tonnage_kg, 0);
+    return { day, exercises: summary, total_tonnage_kg: total, total_sets: Object.values(summary).reduce((n, e) => n + e.sets.length, 0) };
 }
 
 async function getStats({ from, to }) {
@@ -235,8 +365,16 @@ module.exports = {
     logSets,
     getExerciseHistory,
     getWorkout,
+    getWorkoutSummary,
     getStats,
     undoLast,
     deleteSets,
     renameExercise,
+    repeatLast,
+    lastExercise,
+    getAllRecords,
+    getExerciseProgress,
+    logBodyWeight,
+    getBodyWeight,
+    getBodyWeightHistory,
 };

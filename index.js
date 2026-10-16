@@ -8,6 +8,7 @@ const { handleUpdate } = require('./lib/handleUpdate');
 const bot = getBot({ polling: true });
 
 bot.on('message', (message) => handleUpdate(bot, { message }).catch(console.error));
+bot.on('callback_query', (callback_query) => handleUpdate(bot, { callback_query }).catch(console.error));
 
 console.log('Дневник запущен...');
 console.log(new Date());
