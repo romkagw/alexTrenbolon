@@ -8,6 +8,7 @@
 //   bodyweight         — hash день → вес тела
 const { redis } = require('./storage');
 const { TIMEZONE } = require('../config');
+const { suggestPlan, checkPlan } = require('./progression');
 
 const SET_FIELDS = ['weight', 'reps', 'duration_sec', 'distance_km'];
 
@@ -150,6 +151,7 @@ async function logSets({ exercise, sets, date }) {
     await tx.exec();
 
     const todaySets = (await getDay(day)).filter((e) => e.exercise === name).map(view);
+    const plan = suggestPlan(previous);
     return {
         day,
         exercise: name,
@@ -157,7 +159,21 @@ async function logSets({ exercise, sets, date }) {
         sets_this_day: todaySets,
         previous_session: previous || null,
         new_records: findNewRecords(history, entries),
+        // План от прошлой тренировки показываем, когда упражнение только начато
+        plan: todaySets.length === entries.length ? plan : null,
+        plan_check: checkPlan(plan, todaySets),
     };
+}
+
+// План на сегодня по упражнению относительно прошлой тренировки + что уже сделано сегодня
+async function getPlan({ exercise, date }) {
+    const day = assertDay(date || today());
+    const [previous] = await getSessions(exercise, { before: day, limit: 1 });
+    const plan = suggestPlan(previous);
+    if (!plan) return { exercise, plan: null, message: 'Прошлых тренировок нет — это будет первая, плана нет' };
+
+    const todaySets = (await getDay(day)).filter((e) => e.exercise === exercise).map(view);
+    return { exercise, plan, sets_this_day: todaySets, plan_check: todaySets.length ? checkPlan(plan, todaySets) : null };
 }
 
 // Кнопка «Ещё подход»: повторяет последний подход последнего упражнения (после отмены — предыдущий)
@@ -371,6 +387,7 @@ module.exports = {
     deleteSets,
     renameExercise,
     repeatLast,
+    getPlan,
     lastExercise,
     getAllRecords,
     getExerciseProgress,
